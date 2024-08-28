@@ -1,0 +1,5 @@
+# Lock Files
+.env
+# Lock directories
+env/
+__pycache__/
