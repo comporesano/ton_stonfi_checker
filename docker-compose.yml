@@ -1,12 +1,14 @@
+version: '3.8'
+
 services:
   db:
-    image: postgres:15
-    container_name: todo_database
+    image: postgres:16
+    container_name: stonfi_transaction_db
     restart: always
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: todo_tasks
+      POSTGRES_DB: stonfi_tx_base
     ports:
       - "5434:5432"
     volumes:
@@ -15,7 +17,7 @@ services:
   web:
     build:
       context: .
-      dockerfile: ./src/Dockerfile
+      dockerfile: src/Dockerfile
     container_name: stonfi_webapp
     restart: always
     depends_on:
@@ -23,9 +25,9 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./src:/app
+      - .:/app
     command: >
-      sh -c "sleep 10 && alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000"
+      sh -c "sleep 10 && alembic upgrade head && uvicorn src.main:app --host 0.0.0.0 --port 8000"
 
 volumes:
   postgres_data:

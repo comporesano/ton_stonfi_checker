@@ -2,11 +2,11 @@ from fastapi import APIRouter, Depends
 
 from pytonapi import AsyncTonapi
 
-from config import API_KEY
-from database import get_async_session
+from src.config import API_KEY
+from src.database import get_async_session
 
-from models.transaction import Transaction
-from models.user import User
+from src.models.transaction import Transaction
+from src.models.user import User
 
 from pydantic import Json
 
@@ -20,11 +20,13 @@ import json
 
 
 router = APIRouter(prefix='/txs_info', tags=['Работа с транзакциями'])
-
-@router.get('/{account_id}', summary='На вход подается адрес кошелька на выход транзакции в формате JSON')
+#example: time_from /UQCQ2ZY1vcjPRaaTnoGckmXEqTjoejtUtM8l9buDLjnGbU4X/?time_from=2024-08-28+09:16:19
+@router.post('/{account_id}', summary='На вход подается адрес кошелька на выход транзакции в формате JSON')
 async def spawn_transactions(account_id: str,
+                             time_from: str = None,
+                             time_to: str = None,
                              session: AsyncSession = Depends(get_async_session)) -> Json:
-    data = {} 
+    data = {'data': {}} 
     tonapi = AsyncTonapi(api_key=API_KEY)
     account = await tonapi.accounts.get_events(account_id=account_id)
     try:
@@ -34,7 +36,6 @@ async def spawn_transactions(account_id: str,
         session.add(new_user)
         await session.commit()
     except IntegrityError:
-        print('LOL')
         await session.rollback()
     for event in account.events:
         preview = event.actions[0].simple_preview
@@ -59,20 +60,43 @@ async def spawn_transactions(account_id: str,
                 )
                 session.add(new_transaction)
                 await session.commit()
-                data[tx_hash] = {
+                data['data'][tx_hash] = {
                     'user_id': user_id,
                     'amount': str(amount),
                     'tx_type': tx_type,
-                    'tx_timestamp': timestamp,
+                    'tx_timestamp': timestamp.strftime("%Y-%m-%d %H:%M:%S"),
                     'status': status
                     }
             except IntegrityError:
-                data[tx_hash] = {
+                data['data'][tx_hash] = {
                     'user_id': user_id,
-                    'amount': str(amount)   ,
+                    'amount': str(amount),
                     'tx_type': tx_type,
                     'tx_timestamp': timestamp.strftime("%Y-%m-%d %H:%M:%S"),
                     'status': status
                 }
                 await session.rollback()
-    return json.dumps(data)
+
+    aggregation_data = {'data': {}}
+    
+    if time_from:
+        time_from = ' '.join(time_from.split('+'))
+        timest_from = datetime.strptime(time_from, "%Y-%m-%d %H:%M:%S").timestamp()
+    if time_to:
+        time_to = ' '.join(time_to.split('+'))
+        timest_to = datetime.strptime(time_to, "%Y-%m-%d %H:%M:%S").timestamp() 
+    for tx_hash in data['data']:
+        tx_data = data['data'][tx_hash]
+        if time_from and not time_to:
+            if timest_from <= datetime.strptime(tx_data['tx_timestamp'], "%Y-%m-%d %H:%M:%S").timestamp():
+                aggregation_data['data'][tx_hash] = tx_data
+        elif not time_from and time_to: 
+            if datetime.strptime(tx_data['tx_timestamp'], "%Y-%m    -%d %H:%M:%S").timestamp() <= timest_to:
+                aggregation_data['data'][tx_hash] = tx_data
+        elif time_from and time_to:
+            if timest_from > time_to:
+                aggregation_data['data'] = {'INTERNAL SERVER ERROR: Upper limit less than down limit'}
+            if timest_from <=   datetime.strptime(tx_data['tx_timestamp'], "%Y-%m-%d %H:%M:%S").timestamp() <= timest_to:
+                aggregation_data['data'][tx_hash] = tx_data
+        
+    return json.dumps(data) if not time_from and not time_to else json.dumps(aggregation_data)

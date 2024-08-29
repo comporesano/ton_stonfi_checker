@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Depends
-from router import router
+from src.router import router
 
 
 app = FastAPI(title='Stonfi.dex checker')
